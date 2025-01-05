@@ -1,9 +1,11 @@
 import os
-import cv2
-import torch
 import numpy as np
 
+import torchvision
+
 from tqdm import tqdm
+from skimage.color import rgb2lab
+from utils import transform
 
 
 def preprocessDataset(datasetPath, outputPath):
@@ -32,31 +34,24 @@ def preprocessDataset(datasetPath, outputPath):
         os.mkdir(outputPath)
         
         for split in ["train", "test"]:
+            addedImgs = 0
             componentsL[split]  = []
             componentsAB[split] = []
 
             colorImgNames = os.listdir(os.path.join(datasetPath, f"{split}_color"))
             for colorImgName in tqdm(colorImgNames, desc=f"Processing {split} images", unit="image"):
-                colorImgPath         = os.path.join(datasetPath, f"{split}_color", colorImgName)
+                if addedImgs >= 10:
+                    break
+                colorImgPath  = os.path.join(datasetPath, f"{split}_color", colorImgName)
                 
-                colorImg = cv2.imread(colorImgPath)
-                colorImg = cv2.cvtColor(colorImg, cv2.COLOR_BGR2RGB)  # Convert from BGR to RGB
-                colorImg = cv2.cvtColor(colorImg, cv2.COLOR_RGB2LAB)  # Convert from RGB to LAB
+                colorImg = torchvision.io.read_image(colorImgPath)
                 
-                colorImg = np.array(colorImg)
-
-                l = colorImg[:, :, 0]  # The l component is the first channel
-                a = colorImg[:, :, 1]  # The a component is the second channel
-                b = colorImg[:, :, 2]  # The b component is the third channel
-
-                l  = torch.tensor(l, dtype=torch.float32).unsqueeze(0) # Shape (1, H, W)
-                ab = torch.tensor(np.stack((a, b), axis=-1), dtype=torch.float32).permute(2, 0, 1)  # Shape (2, H, W)
-
-                l  = l / 255.
-                ab = ab / 255.
-
+                l, ab = transform(colorImg)
+                
                 componentsL[split].append(l)
                 componentsAB[split].append(ab)
+
+                addedImgs += 1
 
 
             componentsL[split]  = np.array(componentsL[split])

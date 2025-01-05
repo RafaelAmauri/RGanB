@@ -1,17 +1,14 @@
 import torch
-import numpy as np
 import torch.nn as nn
 import torch.optim as optim
 
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 
-from dataset import ColorizationDataset
+from utils import reverseTransform
 from generator import ColorizationCNN
+from dataset import ColorizationDataset
 from preprocess import preprocessDataset
-
-import cv2
-import matplotlib.pyplot as plt
 
 
 mode = "TEST"
@@ -29,7 +26,7 @@ ABtest   = componentsAB["test"]
 datasetTrain = ColorizationDataset(Ltrain, ABtrain)
 dataloader   = DataLoader(datasetTrain, batch_size=48, shuffle=True)
 
-device = "cuda"
+device = "cpu"
 
 # Instantiate model
 generator  = ColorizationCNN().to(device)
@@ -66,9 +63,10 @@ if mode == "TRAIN":
     torch.save(generator.state_dict(), "Generator.pth")
     print("Trained model saved to Generator.pth")
 
+
+
 elif mode == "TEST":
-    
-    generator.load_state_dict(torch.load("cnn_6th_2000_full.pt")["model_state_dict"])
+    generator.load_state_dict(torch.load("Generator.pth", weights_only=True))
     generator = generator.to(device)
     
     with torch.no_grad():
@@ -79,21 +77,13 @@ elif mode == "TEST":
         groundTruthAB = torch.tensor(ABtest[imgIdx], dtype=torch.float32).to(device)
 
 
-        generatedAB = generator(groundTruthL)
-
-        groundTruthL = groundTruthL.to("cpu").squeeze(0).squeeze(0)
-        groundTruthL = groundTruthL * 255.
-
-        generatedAB = generatedAB.to("cpu")
-        generatedAB = generatedAB.detach().squeeze(0)
-        generatedAB = generatedAB * 255.
-
-        generatedA, generatedB = generatedAB
+        generatedAB  = generator(groundTruthL)
+        generatedAB  = generatedAB.squeeze(0)
         
-        LAB_img = np.stack([groundTruthL, generatedA, generatedB], axis=-1).astype(np.uint8)
-        RGB_img = cv2.cvtColor(LAB_img, cv2.COLOR_LAB2RGB)
+        groundTruthL = groundTruthL.squeeze(0)
+        
+        img = reverseTransform(groundTruthL, generatedAB)
 
-        plt.imshow(RGB_img)
-        plt.title("Converted RGB Image")
-        plt.axis('off')
-        plt.show()
+        from PIL import Image
+        img = Image.fromarray(img)
+        img.save("./a.png")
