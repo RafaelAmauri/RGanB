@@ -1,19 +1,20 @@
-from PIL import Image
-from torchvision import transforms
+import torchvision
 from torch.utils.data import Dataset
+from utils import transform
 
 
 class ColorizationDataset(Dataset):
-    def __init__(self, valuesL, valuesAB):
+    def __init__(self, imgPaths):
 
-        self.valuesL  = valuesL
-        self.valuesAB = valuesAB
+        self.imgPaths = imgPaths
 
     def __len__(self):
-        return len(self.valuesL)
+        return len(self.imgPaths)
 
     def __getitem__(self, idx):
-        sampleL  = self.valuesL[idx]
-        sampleAB = self.valuesAB[idx]
+        imgPath = self.imgPaths[idx]
 
-        return sampleL, sampleAB
+        img   = torchvision.io.read_image(imgPath)
+        l, ab = transform(img)
+       
+        return l, ab

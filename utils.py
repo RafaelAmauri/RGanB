@@ -13,7 +13,10 @@ def transform(img):
     ab = img[1:, :, :] # The ab component is the first and second channel
 
 
-    l  = l.unsqueeze(0) # Shape (1, H, W)
+    l = l.unsqueeze(0) # Shape (1, H, W)
+
+    l  = l.to(torch.float32)
+    ab = ab.to(torch.float32)
 
     return l, ab
 
