@@ -4,6 +4,7 @@ import torch.nn.functional as F
 
 
 class ColorizationCNN(nn.Module):
+
     def __init__(self):
         """
         Initializes each part of the convolutional neural network.
