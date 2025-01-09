@@ -14,7 +14,10 @@ class ColorizationDataset(Dataset):
     def __getitem__(self, idx):
         imgPath = self.imgPaths[idx]
 
-        img   = torchvision.io.read_image(imgPath)
+        img    = torchvision.io.read_image(imgPath)
+        resize = torchvision.transforms.Resize(size=(256,256))
+        img    = resize(img)
+        
         l, ab = transform(img)
        
         return l, ab
