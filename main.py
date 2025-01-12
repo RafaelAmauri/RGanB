@@ -6,7 +6,6 @@ import torch.optim as optim
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 
-from utils import reverseTransform, undo_transform
 from collections import defaultdict
 from generator import ColorizationCNN, ColorizationCNN2
 from discriminator import Discriminator
@@ -22,12 +21,14 @@ rootFolder = "/home/rafael/Estudos/Datasets/image-colorization-dataset/data"
 videoPaths = defaultdict(list)
 
 for split in ["train", "test"]:
-    for imgName in os.listdir(os.path.join(rootFolder, f"{split}_color")):
-        imgPath = os.path.join(rootFolder, f"{split}_color", imgName)
-        videoPaths[split].append(imgPath)
+    for imgName in os.listdir(os.path.join(rootFolder, f"{split}_black")):
+        imgBWPath    = os.path.join(rootFolder, f"{split}_black", imgName)
+        imgColorPath = os.path.join(rootFolder, f"{split}_color", imgName)
+        videoPaths[split].append([imgBWPath, imgColorPath])
+
+videoPaths["train"] = videoPaths['train'][ : 100]
 
 
-videoPaths["train"] = videoPaths["train"][:500]
 
 datasetTrain    = ColorizationDataset(videoPaths["train"])
 dataloaderTrain = DataLoader(datasetTrain, batch_size=24, shuffle=True)
@@ -40,68 +41,82 @@ device = args.device
 generator     = ColorizationCNN().to(device)
 discriminator = Discriminator().to(device)
 
-
 if args.mode == "train":
 
     # Loss functions
-    adversarial_criterion = nn.BCELoss()  # For discriminator
+    adversarial_criterion = nn.BCEWithLogitsLoss()  # For discriminator
     content_criterion = nn.MSELoss()      # For generator (L2 loss)
 
     # Optimizers
-    lr=0.001
+    lr_D=0.01
+    lr_G=0.01
+    alpha = 0.001
+    optimizer_D = optim.Adam(discriminator.parameters(), lr=lr_D)
+    optimizer_G = optim.Adam(generator.parameters(), lr=lr_G)
 
-    optimizer_G = optim.Adam(generator.parameters(), lr=lr)
-    optimizer_D = optim.Adam(discriminator.parameters(), lr=lr)
+    schedulerG   = optim.lr_scheduler.MultiStepLR(optimizer_G, milestones=[130,200,250], gamma=0.1)
+    schedulerD   = optim.lr_scheduler.MultiStepLR(optimizer_D, milestones=[30,200,250], gamma=0.1)
 
 
-    numEpochs = 30
+    numEpochs = 200
     for currentEpoch in tqdm(range(numEpochs), desc="Training Completed", unit="epoch"):
-        runningLossGenerator = 0
+        runningLossGenerator     = 0
         runningLossDiscriminator = 0
-        runningLossAdversarial = 0
-        for i, (sampleL, sampleAB) in enumerate(tqdm(dataloaderTrain, desc=f"Epoch {currentEpoch+1}", leave=False, unit="batch")):
+        runningLossAdversarial   = 0
+        for i, (sampleBW, sampleRGB) in enumerate(tqdm(dataloaderTrain, desc=f"Epoch {currentEpoch+1}", leave=False, unit="batch")):
+            sampleBW  = sampleBW.to(device)
+            sampleRGB = sampleRGB.to(device)
 
-            sampleL  = sampleL.float().to(device)
-            sampleAB = sampleAB.float().to(device)
-
-            generatedAB  = generator(sampleL)
-
+            generatedRGB  = generator(sampleBW)
+            
             # Train Discriminator
             optimizer_D.zero_grad()
 
-            real_images = torch.cat([sampleL, sampleAB], dim=1)
-            fake_images = torch.cat([sampleL, generatedAB.detach()], dim=1)
+            real_images = sampleRGB
+            fake_images = generatedRGB.detach()
 
-            real_labels = torch.ones(real_images.size(0), 1).to(device)
-            fake_labels = torch.zeros(fake_images.size(0), 1).to(device)
+            predictionRealImages = discriminator(real_images)
+            predictionFakeImages = discriminator(fake_images)
 
-            real_loss = adversarial_criterion(discriminator(real_images), real_labels)
-            fake_loss = adversarial_criterion(discriminator(fake_images), fake_labels)
+            real_labels = torch.empty_like(predictionRealImages).uniform_(0.95, 0.99)
+            fake_labels = torch.zeros_like(predictionFakeImages)
+
+            real_loss = adversarial_criterion(predictionRealImages, real_labels)
+            fake_loss = adversarial_criterion(predictionFakeImages, fake_labels)
             discriminator_loss = (real_loss + fake_loss) / 2
             
+            runningLossDiscriminator += discriminator_loss.item()
             discriminator_loss.backward()
             optimizer_D.step()
             
             # Train Generator
-            optimizer_G.zero_grad()
+            for i in range(2):
+                optimizer_G.zero_grad()
+                
+                # Content loss
+                mse_loss = content_criterion(generatedRGB, sampleRGB)
+                
+                # Adversarial loss
+                adversarial_loss = adversarial_criterion(discriminator(fake_images), real_labels)
+                if currentEpoch > 20:
+                    alpha = 0.1
+                    
+                generator_loss   = mse_loss + alpha * adversarial_loss
 
-             # Content loss
-            mse_loss = content_criterion(generatedAB, sampleAB)
-            
-            # Adversarial loss
-            real_loss = adversarial_criterion(discriminator(real_images), fake_labels)
-            fake_loss = adversarial_criterion(discriminator(fake_images), real_labels)
-            adversarial_loss = (real_loss + fake_loss) / 2
-            generator_loss = 0.01 * adversarial_loss
+                generator_loss.backward()
+                optimizer_G.step()
 
-            generator_loss.backward()
-            optimizer_G.step()
+                runningLossGenerator     += generator_loss.item()
+                runningLossAdversarial   += adversarial_loss.item()
 
-            runningLossGenerator += generator_loss.item()
-            runningLossDiscriminator += discriminator_loss.item()
-            runningLossAdversarial += adversarial_loss.item()
+                generatedRGB  = generator(sampleBW)
+                fake_images   = generatedRGB.detach()
 
-        print(f"\nEpoch {currentEpoch} finished. Generator Loss: {runningLossGenerator}, Discriminator Loss: {runningLossDiscriminator}, Adversarial Loss: {runningLossAdversarial}")
+
+
+        schedulerG.step()
+        schedulerD.step()
+        print(f"\nEpoch {currentEpoch} finished. LR: {schedulerG.get_last_lr()} Generator Loss: {runningLossGenerator}, Discriminator Loss: {runningLossDiscriminator}, Adversarial Loss: {runningLossAdversarial}")
 
     torch.save(generator.state_dict(), "Generator.pth")
     print("Trained model saved to Generator.pth")
@@ -116,27 +131,27 @@ elif args.mode == "test":
 
         imgIdx = 0
         
-        groundTruthL, groundTruthAB = datasetTrain[imgIdx]
+        groundTruthBW, groundTruthRGB = datasetTest[imgIdx]
         # Add batch channel
-        groundTruthL = groundTruthL.unsqueeze(0)
+        groundTruthBW = groundTruthBW.unsqueeze(0)
 
-        generatedAB  = generator(groundTruthL)
+        generatedRGB  = generator(groundTruthBW)
         
         # Remove batch channel
-        generatedAB  = generatedAB.squeeze(0)
+        generatedRGB  = generatedRGB.squeeze(0)
         # Remove batch channel
-        groundTruthL = groundTruthL.squeeze(0)
+        groundTruthBW = groundTruthBW.squeeze(0)
 
-        from PIL import Image
+
+        groundTruthRGB = (groundTruthRGB * 255).to(torch.uint8)
+        generatedRGB   = (generatedRGB * 255).to(torch.uint8)
+        groundTruthBW  = (groundTruthBW * 255).to(torch.uint8)
         
-        img = reverseTransform(groundTruthL, generatedAB)
-        img = Image.fromarray(img)
-        img.save("./colorized.png")
+        content_criterion = nn.MSELoss()
+        mse_loss = content_criterion(generatedRGB.to(torch.float), groundTruthRGB.to(torch.float))
 
-        img = reverseTransform(groundTruthL, groundTruthAB)
-        img = Image.fromarray(img)
-        img.save("./groundtruth.png")
-
+        import torchvision 
+        torchvision.io.write_jpeg(generatedRGB, "./colorized.jpeg")
+        torchvision.io.write_jpeg(groundTruthRGB, "./groundtruth.jpeg")
+        torchvision.io.write_jpeg(groundTruthBW, "./black_and_white.jpeg")
         
-        img = Image.fromarray(undo_transform(groundTruthL))
-        img.save("./black_and_white.png")

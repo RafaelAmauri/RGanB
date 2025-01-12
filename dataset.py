@@ -1,7 +1,7 @@
 import torchvision
 from torch.utils.data import Dataset
 from utils import transform
-
+import torch
 
 class ColorizationDataset(Dataset):
     def __init__(self, imgPaths):
@@ -12,12 +12,16 @@ class ColorizationDataset(Dataset):
         return len(self.imgPaths)
 
     def __getitem__(self, idx):
-        imgPath = self.imgPaths[idx]
+        imgBWPath, imgColorPath = self.imgPaths[idx]
+        resize = torchvision.transforms.Resize(size=(256, 256))
 
-        img    = torchvision.io.read_image(imgPath)
-        resize = torchvision.transforms.Resize(size=(256,256))
-        img    = resize(img)
-        
-        l, ab = transform(img)
-       
-        return l, ab
+        imgBW    = torchvision.io.read_image(imgBWPath, mode=torchvision.io.ImageReadMode.GRAY)
+        imgBW    = resize(imgBW)
+        imgBW    = transform(imgBW)
+
+        imgColor = torchvision.io.read_image(imgColorPath)
+        imgColor = resize(imgColor)
+        imgColor = transform(imgColor)
+
+
+        return imgBW, imgColor
