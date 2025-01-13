@@ -33,7 +33,7 @@ class ColorizationCNN2(nn.Module):
         self.t_conv3_bn = nn.BatchNorm2d(32)
         self.t_conv4 = nn.ConvTranspose2d(64, 2, kernel_size=4, stride=2, padding=1)
 
-        self.output = nn.Conv2d(3, 3, kernel_size=3, stride=1, padding=1)
+        self.output = nn.Conv2d(3, 2, kernel_size=3, stride=1, padding=1)
 
     def forward(self, x):
         """
@@ -124,7 +124,7 @@ class ColorizationCNN(nn.Module):
 
         self.conv15    = nn.Conv2d(in_channels=128, out_channels=2, kernel_size=3, stride=1, padding=1)
 
-        self.conv16    = nn.Conv2d(in_channels=3, out_channels=3, kernel_size=3, stride=1, padding=1)
+        self.conv16    = nn.Conv2d(in_channels=3, out_channels=2, kernel_size=3, stride=1, padding=1)
 
 
     def forward(self, LComponent):
@@ -212,6 +212,5 @@ class ColorizationCNN(nn.Module):
         layer15 = self.conv15(layer14)
         layer16 = torch.cat((LComponent,layer15), dim=1)
         layer16 = self.conv16(layer16)
-        layer16 = self.sigmoid(layer16)
 
         return layer16

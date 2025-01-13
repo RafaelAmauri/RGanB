@@ -1,7 +1,10 @@
-import torchvision
-from torch.utils.data import Dataset
-from utils import transform
 import torch
+from torch.utils.data import Dataset
+from utils import transform, undoTransform
+from skimage import io
+import pandas as pd
+import numpy as np
+import skimage
 
 class ColorizationDataset(Dataset):
     def __init__(self, imgPaths):
@@ -13,15 +16,8 @@ class ColorizationDataset(Dataset):
 
     def __getitem__(self, idx):
         imgBWPath, imgColorPath = self.imgPaths[idx]
-        resize = torchvision.transforms.Resize(size=(256, 256))
 
-        imgBW    = torchvision.io.read_image(imgBWPath, mode=torchvision.io.ImageReadMode.GRAY)
-        imgBW    = resize(imgBW)
-        imgBW    = transform(imgBW)
-
-        imgColor = torchvision.io.read_image(imgColorPath)
-        imgColor = resize(imgColor)
-        imgColor = transform(imgColor)
-
-
-        return imgBW, imgColor
+        imgColor = io.imread(imgColorPath)
+        imgColorL, imgColorAB = transform(imgColor)
+        
+        return imgColorL, imgColorAB
