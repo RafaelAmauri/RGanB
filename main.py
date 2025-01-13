@@ -5,6 +5,8 @@ import torch.optim as optim
 
 from tqdm import tqdm
 from torch.utils.data import DataLoader
+from torch.amp import autocast, GradScaler
+
 
 from collections import defaultdict
 from generator import ColorizationCNN, ColorizationCNN2
@@ -26,14 +28,14 @@ for split in ["train", "test"]:
         imgColorPath = os.path.join(rootFolder, f"{split}_color", imgName)
         videoPaths[split].append([imgBWPath, imgColorPath])
 
-videoPaths["train"] = videoPaths['train'][ : 100]
+#videoPaths["train"] = videoPaths['train'][ : 100]
 
 
 
 datasetTrain    = ColorizationDataset(videoPaths["train"])
-dataloaderTrain = DataLoader(datasetTrain, batch_size=24, shuffle=True)
+dataloaderTrain = DataLoader(datasetTrain, batch_size=32, shuffle=True)
 datasetTest     = ColorizationDataset(videoPaths["test"])
-dataloaderTest  = DataLoader(datasetTest, batch_size=24, shuffle=True)
+dataloaderTest  = DataLoader(datasetTest, batch_size=32, shuffle=True)
 
 device = args.device
 
@@ -57,6 +59,8 @@ if args.mode == "train":
     schedulerG   = optim.lr_scheduler.MultiStepLR(optimizer_G, milestones=[130,200,250], gamma=0.1)
     schedulerD   = optim.lr_scheduler.MultiStepLR(optimizer_D, milestones=[30,200,250], gamma=0.1)
 
+    scaler_G = GradScaler()
+    scaler_D = GradScaler()
 
     numEpochs = 200
     for currentEpoch in tqdm(range(numEpochs), desc="Training Completed", unit="epoch"):
@@ -67,50 +71,59 @@ if args.mode == "train":
             sampleBW  = sampleBW.to(device)
             sampleRGB = sampleRGB.to(device)
 
-            generatedRGB  = generator(sampleBW)
-            
+            with autocast(device_type=device, dtype=torch.float16):
+                generatedRGB  = generator(sampleBW)
+                
+
             # Train Discriminator
             optimizer_D.zero_grad()
+            with autocast(device_type=device, dtype=torch.float16):
+                real_images = sampleRGB
+                fake_images = generatedRGB.detach()
 
-            real_images = sampleRGB
-            fake_images = generatedRGB.detach()
+                predictionRealImages = discriminator(real_images)
+                predictionFakeImages = discriminator(fake_images)
 
-            predictionRealImages = discriminator(real_images)
-            predictionFakeImages = discriminator(fake_images)
+                real_labels = torch.empty_like(predictionRealImages).uniform_(0.95, 0.99)
+                fake_labels = torch.zeros_like(predictionFakeImages)
 
-            real_labels = torch.empty_like(predictionRealImages).uniform_(0.95, 0.99)
-            fake_labels = torch.zeros_like(predictionFakeImages)
+                real_loss = adversarial_criterion(predictionRealImages, real_labels)
+                fake_loss = adversarial_criterion(predictionFakeImages, fake_labels)
+                discriminator_loss = (real_loss + fake_loss) / 2
+                
+                runningLossDiscriminator += discriminator_loss.item()
 
-            real_loss = adversarial_criterion(predictionRealImages, real_labels)
-            fake_loss = adversarial_criterion(predictionFakeImages, fake_labels)
-            discriminator_loss = (real_loss + fake_loss) / 2
-            
-            runningLossDiscriminator += discriminator_loss.item()
-            discriminator_loss.backward()
-            optimizer_D.step()
-            
+            # Scale loss and backpropagate for discriminator
+            scaler_D.scale(discriminator_loss).backward()
+            scaler_D.step(optimizer_D)
+            scaler_D.update()
+
+
             # Train Generator
             for i in range(2):
                 optimizer_G.zero_grad()
-                
-                # Content loss
-                mse_loss = content_criterion(generatedRGB, sampleRGB)
-                
-                # Adversarial loss
-                adversarial_loss = adversarial_criterion(discriminator(fake_images), real_labels)
-                if currentEpoch > 20:
-                    alpha = 0.1
+                with autocast(device_type=device, dtype=torch.float16):
+                    # Content loss
+                    mse_loss = content_criterion(generatedRGB, sampleRGB)
                     
-                generator_loss   = mse_loss + alpha * adversarial_loss
+                    # Adversarial loss
+                    adversarial_loss = adversarial_criterion(discriminator(fake_images), real_labels)
+                    if currentEpoch > 20:
+                        alpha = 0.1
+                        
+                    generator_loss   = mse_loss + alpha * adversarial_loss
 
-                generator_loss.backward()
-                optimizer_G.step()
+                    runningLossGenerator     += generator_loss.item()
+                    runningLossAdversarial   += adversarial_loss.item()
 
-                runningLossGenerator     += generator_loss.item()
-                runningLossAdversarial   += adversarial_loss.item()
+                # Scale loss and backpropagate for generator
+                scaler_G.scale(generator_loss).backward()
+                scaler_G.step(optimizer_G)
+                scaler_G.update()
 
-                generatedRGB  = generator(sampleBW)
-                fake_images   = generatedRGB.detach()
+                with autocast(device_type=device, dtype=torch.float16):
+                    generatedRGB  = generator(sampleBW)
+                    fake_images   = generatedRGB.detach()
 
 
 
