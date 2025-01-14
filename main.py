@@ -30,13 +30,13 @@ for split in ["train", "test"]:
         imgColorPath = os.path.join(rootFolder, f"{split}_color", imgName)
         videoPaths[split].append([imgBWPath, imgColorPath])
 
-videoPaths["train"] = videoPaths['train'][ : 50]
+#videoPaths["train"] = videoPaths['train'][ : 50]
 
 
 datasetTrain    = ColorizationDataset(videoPaths["train"])
-dataloaderTrain = DataLoader(datasetTrain, batch_size=1, shuffle=True)
+dataloaderTrain = DataLoader(datasetTrain, batch_size=16, shuffle=True, num_workers=16, pin_memory=True)
 datasetTest     = ColorizationDataset(videoPaths["test"])
-dataloaderTest  = DataLoader(datasetTest, batch_size=1, shuffle=True)
+dataloaderTest  = DataLoader(datasetTest, batch_size=15, shuffle=True, num_workers=16, pin_memory=True)
 
 device = args.device
 
