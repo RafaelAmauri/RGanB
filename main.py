@@ -29,7 +29,6 @@ for split in ["train", "test"]:
         videoPaths[split].append([imgBWPath, imgColorPath])
 
 videoPaths["train"] = videoPaths['train'][ : 500]
-useAmp = True
 
 
 datasetTrain    = ColorizationDataset(videoPaths["train"])
@@ -50,8 +49,8 @@ if args.mode == "train":
     content_criterion = nn.L1Loss()      # For generator (L2 loss)
 
     # Optimizers
-    lr_D=0.01
-    lr_G=0.01
+    lr_D=0.001
+    lr_G=0.001
     alpha = 0.001
     optimizer_D = optim.Adam(discriminator.parameters(), lr=lr_D)
     optimizer_G = optim.Adam(generator.parameters(), lr=lr_G)
@@ -108,7 +107,7 @@ if args.mode == "train":
                 # Adversarial loss
                 adversarial_loss = adversarial_criterion(discriminator(fake_images), real_labels)
                 if currentEpoch > 70:
-                    alpha = 0.1
+                    alpha = 0.01
                     
                 generator_loss   = mse_loss + alpha * adversarial_loss
 
