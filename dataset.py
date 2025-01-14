@@ -18,6 +18,6 @@ class ColorizationDataset(Dataset):
         imgBWPath, imgColorPath = self.imgPaths[idx]
 
         imgColor = io.imread(imgColorPath)
-        imgColorL, imgColorLAB, imgColorAB = transform(imgColor)
+        imgColorL, imgColorAB, imgColorLAB  = transform(imgColor)
         
-        return imgColorL, imgColorLAB, imgColorAB
+        return imgColorL, imgColorAB, imgColorLAB

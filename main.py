@@ -69,7 +69,7 @@ if args.mode == "train":
         runningLossGenerator     = 0
         runningLossDiscriminator = 0
         runningLossAdversarial   = 0
-        for i, (groundTruthL, groundTruthLAB, groundTruthAB) in enumerate(tqdm(dataloaderTrain, desc=f"Epoch {currentEpoch+1}", leave=False, unit="batch")):
+        for i, (groundTruthL, groundTruthAB, groundTruthLAB) in enumerate(tqdm(dataloaderTrain, desc=f"Epoch {currentEpoch+1}", leave=False, unit="batch")):
             groundTruthL    = groundTruthL.to(torch.float32).to(device)
             groundTruthLAB  = groundTruthLAB.to(torch.float32).to(device)
             groundTruthAB   = groundTruthAB.to(torch.float32).to(device)
@@ -112,10 +112,10 @@ if args.mode == "train":
             optimizer_G.zero_grad()
 
             with autocast(device_type=device, dtype=torch.float16):
-                # MSE Loss is calculated for the AB channels ONLY.
+                # MSE Loss is calculated for the A and B channels ONLY.
                 mse_loss = content_criterion(generatedAB, groundTruthAB)
                 
-                # Adversarial loss
+                # Adversarial loss is calculated for the LAB image.
                 adversarial_loss = adversarial_criterion(discriminator(fake_images), real_labels)
                 if currentEpoch > 140:
                     alpha = 0.01
@@ -148,7 +148,7 @@ elif args.mode == "test":
     with torch.no_grad():
         imgIdx = 100
         
-        groundTruthL, groundTruthLAB, groundTruthAB = datasetTest[imgIdx]
+        groundTruthL, groundTruthAB, groundTruthLAB = datasetTest[imgIdx]
 
         groundTruthL   = torch.from_numpy(groundTruthL).to(torch.float32).unsqueeze(0)
         groundTruthLAB = torch.from_numpy(groundTruthLAB).to(torch.float32)

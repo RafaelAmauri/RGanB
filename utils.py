@@ -40,4 +40,4 @@ def transform(imgColor):
     imgColorABNormalized  = np.stack((imgColorANormalized, imgColorBNormalized), axis=0)
     imgColorLNormalized   = np.expand_dims(imgColorLNormalized, axis=0)
 
-    return imgColorLNormalized, imgColorLABNormalized, imgColorABNormalized
+    return imgColorLNormalized, imgColorABNormalized, imgColorLABNormalized
