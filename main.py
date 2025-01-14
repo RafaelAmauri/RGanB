@@ -28,8 +28,8 @@ for split in ["train", "test"]:
         imgColorPath = os.path.join(rootFolder, f"{split}_color", imgName)
         videoPaths[split].append([imgBWPath, imgColorPath])
 
-#videoPaths["train"] = videoPaths['train'][ : 100]
-
+videoPaths["train"] = videoPaths['train'][ : 100]
+useAmp = True
 
 
 datasetTrain    = ColorizationDataset(videoPaths["train"])
@@ -47,7 +47,7 @@ if args.mode == "train":
 
     # Loss functions
     adversarial_criterion = nn.BCEWithLogitsLoss()  # For discriminator
-    content_criterion = nn.MSELoss()      # For generator (L2 loss)
+    content_criterion = nn.L1Loss()      # For generator (L2 loss)
 
     # Optimizers
     lr_D=0.01
@@ -100,30 +100,26 @@ if args.mode == "train":
 
 
             # Train Generator
-            for i in range(2):
-                optimizer_G.zero_grad()
-                with autocast(device_type=device, dtype=torch.float16):
-                    # Content loss
-                    mse_loss = content_criterion(generatedRGB, sampleRGB)
+            optimizer_G.zero_grad()
+            with autocast(device_type=device, dtype=torch.float16):
+                # Content loss
+                mse_loss = content_criterion(generatedRGB, sampleRGB)
+                
+                # Adversarial loss
+                adversarial_loss = adversarial_criterion(discriminator(fake_images), real_labels)
+                if currentEpoch > 70:
+                    alpha = 0.1
                     
-                    # Adversarial loss
-                    adversarial_loss = adversarial_criterion(discriminator(fake_images), real_labels)
-                    if currentEpoch > 20:
-                        alpha = 0.1
-                        
-                    generator_loss   = mse_loss + alpha * adversarial_loss
+                generator_loss   = mse_loss + alpha * adversarial_loss
 
-                    runningLossGenerator     += generator_loss.item()
-                    runningLossAdversarial   += adversarial_loss.item()
+                runningLossGenerator     += generator_loss.item()
+                runningLossAdversarial   += adversarial_loss.item()
 
-                # Scale loss and backpropagate for generator
-                scaler_G.scale(generator_loss).backward()
-                scaler_G.step(optimizer_G)
-                scaler_G.update()
+            # Scale loss and backpropagate for generator
+            scaler_G.scale(generator_loss).backward()
+            scaler_G.step(optimizer_G)
+            scaler_G.update()
 
-                with autocast(device_type=device, dtype=torch.float16):
-                    generatedRGB  = generator(sampleBW)
-                    fake_images   = generatedRGB.detach()
 
 
 
@@ -142,9 +138,9 @@ elif args.mode == "test":
     
     with torch.no_grad():
 
-        imgIdx = 0
+        imgIdx = 1
         
-        groundTruthBW, groundTruthRGB = datasetTest[imgIdx]
+        groundTruthBW, groundTruthRGB = datasetTrain[imgIdx]
         # Add batch channel
         groundTruthBW = groundTruthBW.unsqueeze(0)
 
