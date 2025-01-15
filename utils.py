@@ -8,8 +8,8 @@ def undoTransform(imgColorLAB):
     imgColorL, imgColorA, imgColorB = imgColorLAB
 
     imgColorL = imgColorL * 100
-    imgColorA = (imgColorA * 128 ) - 128
-    imgColorB = (imgColorB * 128)  - 128
+    imgColorA = (imgColorA * 256 ) - 128
+    imgColorB = (imgColorB * 256)  - 128
 
     imgColorLAB = np.stack((imgColorL, imgColorA, imgColorB), axis=0)
     imgColorLAB = np.transpose(imgColorLAB, (1, 2, 0)) # Convert from [C, H, W] to [H, W, C]
@@ -33,8 +33,8 @@ def transform(imgColor):
     imgColorLAB = np.transpose(imgColor, (2, 0, 1))
 
     imgColorLNormalized = imgColorLAB[0] / 100
-    imgColorANormalized = (imgColorLAB[1] + 128) / 128 # The 'a' component is the second channel
-    imgColorBNormalized = (imgColorLAB[2] + 128) / 128 # The 'b' component is the third channel
+    imgColorANormalized = (imgColorLAB[1] + 128) / 256 # The 'a' component is the second channel
+    imgColorBNormalized = (imgColorLAB[2] + 128) / 256 # The 'b' component is the third channel
 
     imgColorLABNormalized = np.stack((imgColorLNormalized, imgColorANormalized, imgColorBNormalized), axis=0)
     imgColorABNormalized  = np.stack((imgColorANormalized, imgColorBNormalized), axis=0)
