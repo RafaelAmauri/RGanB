@@ -1,10 +1,6 @@
-import torch
 from torch.utils.data import Dataset
-from utils import transform, undoTransform
+from utils import transform
 from skimage import io
-import pandas as pd
-import numpy as np
-import skimage
 
 class ColorizationDataset(Dataset):
     def __init__(self, imgPaths):

@@ -17,7 +17,6 @@ from utils import transform, undoTransform
 
 from torch.amp import autocast, GradScaler
 from skimage import io
-import numpy as np
 
 from torchvision.models import vgg19
 import torch.nn.functional as F
