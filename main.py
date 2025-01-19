@@ -34,9 +34,9 @@ videoPaths["train"] = videoPaths['train'][ : 2000]
 
 
 datasetTrain    = ColorizationDataset(videoPaths["train"])
-dataloaderTrain = DataLoader(datasetTrain, batch_size=2, shuffle=True, num_workers=8, pin_memory=True)
+dataloaderTrain = DataLoader(datasetTrain, batch_size=2, shuffle=True, num_workers=os.cpu_count()-3, pin_memory=True)
 datasetTest     = ColorizationDataset(videoPaths["test"])
-dataloaderTest  = DataLoader(datasetTest,  batch_size=2, shuffle=True, num_workers=8, pin_memory=True)
+dataloaderTest  = DataLoader(datasetTest,  batch_size=2, shuffle=True, num_workers=os.cpu_count()-3, pin_memory=True)
 
 device = args.device
 
@@ -144,7 +144,7 @@ if args.mode == "train":
 
 
 elif args.mode == "test":
-    generator.load_state_dict(torch.load("Generator.pth", weights_only=True))
+    generator.load_state_dict(torch.load(args.generator_path, weights_only=True))
     generator = generator.to(device)
     
     with torch.no_grad():
