@@ -36,7 +36,7 @@ for split in ["train", "test"]:
 datasetTrain    = ColorizationDataset(videoPaths["train"])
 dataloaderTrain = DataLoader(datasetTrain, batch_size=args.batch_size, shuffle=True, num_workers=os.cpu_count()-3, pin_memory=True)
 datasetTest     = ColorizationDataset(videoPaths["test"])
-dataloaderTest  = DataLoader(datasetTest,  batch_size=args.batch_size, shuffle=True, num_workers=os.cpu_count()-3, pin_memory=True)
+dataloaderTest  = DataLoader(datasetTest,  batch_size=1, shuffle=True, num_workers=os.cpu_count()-3, pin_memory=True)
 
 device = args.device
 
