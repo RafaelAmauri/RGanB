@@ -12,9 +12,9 @@ from torch.utils.data import DataLoader
 from torch.amp import autocast, GradScaler
 
 
+from utils import undoTransform
 from generator import ColorizationCNN
 from dataset import ColorizationDataset
-from utils import transform, undoTransform
 from discriminator import NLayerDiscriminator
 
 
