@@ -1,3 +1,4 @@
 Pretrained[[:space:]]Models/Generator-BatchSize4-Epoch330-Lr0.0002.pth filter=lfs diff=lfs merge=lfs -text
 Pretrained[[:space:]]Models/Generator-BatchSize2-Epoch330.pth filter=lfs diff=lfs merge=lfs -text
 Pretrained[[:space:]]Models/Generator-BatchSize3-Epoch330-Lr0.0002.pth filter=lfs diff=lfs merge=lfs -text
+Pretrained[[:space:]]Models/Generator-BatchSize2-Epoch330-Lr0.0002.pth filter=lfs diff=lfs merge=lfs -text

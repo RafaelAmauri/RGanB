@@ -30,13 +30,13 @@ for split in ["train", "test"]:
         videoPaths[split].append([imgBWPath, imgColorPath])
 
 
-videoPaths["train"] = videoPaths['train'][ : 2000]
+#videoPaths["train"] = videoPaths['train'][ : 2000]
 
 
 datasetTrain    = ColorizationDataset(videoPaths["train"])
-dataloaderTrain = DataLoader(datasetTrain, batch_size=2, shuffle=True, num_workers=os.cpu_count()-3, pin_memory=True)
+dataloaderTrain = DataLoader(datasetTrain, batch_size=args.batch_size, shuffle=True, num_workers=os.cpu_count()-3, pin_memory=True)
 datasetTest     = ColorizationDataset(videoPaths["test"])
-dataloaderTest  = DataLoader(datasetTest,  batch_size=2, shuffle=True, num_workers=os.cpu_count()-3, pin_memory=True)
+dataloaderTest  = DataLoader(datasetTest,  batch_size=args.batch_size, shuffle=True, num_workers=os.cpu_count()-3, pin_memory=True)
 
 device = args.device
 
@@ -60,7 +60,7 @@ if args.mode == "train":
     scalerG = GradScaler()
     scalerD = GradScaler()
     
-    numEpochs = 300
+    numEpochs = 200
     nBatches  = max(1, len(datasetTrain) // dataloaderTrain.batch_size)
 
     for currentEpoch in tqdm(range(numEpochs), desc="Training Completed", unit="epoch"):
@@ -79,10 +79,8 @@ if args.mode == "train":
             
             generatedLAB = torch.cat((groundTruthL, generatedAB), dim=1)
 
-            # Ligando o cálculo de gradiente para o discriminador
             for p in discriminator.parameters():
                 p.requires_grad = True
-
 
             # Train Discriminator
             optimizerD.zero_grad()
@@ -110,17 +108,17 @@ if args.mode == "train":
             for p in discriminator.parameters():
                 p.requires_grad = False
         
-            # Zeramos os gradientes do gerador
-            optimizerG.zero_grad()
             
+            optimizerG.zero_grad()
             with autocast(device_type=device, dtype=torch.float16):
                 # L1 Loss is calculated for the A and B channels ONLY.
                 l1_loss  = l1Loss(generatedAB, groundTruthAB)
                 
-                # Adversarial loss is calculated for the LAB image.
+                # 30 Epochs to teach the model the general structure of the image.
                 if currentEpoch < 30:
                     generatorLoss = 100 * l1_loss
                 else:
+                    # Adversarial loss is calculated for the LAB image.
                     adversarialLoss = adversarialCriterion(discriminator(generatedLAB), torch.ones_like(predictionRealImages))
                     generatorLoss   = adversarialLoss + 100 * l1_loss
 
@@ -138,19 +136,20 @@ if args.mode == "train":
         print(f"\nEpoch {currentEpoch} finished. Generator Loss (mean/batch): {runningLossGenerator}, Discriminator Loss (mean/batch): {runningLossDiscriminator}")
 
 
-    torch.save(generator.state_dict(), "Generator.pth")
+    torch.save(generator.state_dict(), f"Generator-BatchSize{args.batch_size}-Epoch{numEpochs}.pth")
     print("Trained model saved to Generator.pth")
 
 
 
 elif args.mode == "test":
+    device = "cpu"
     generator.load_state_dict(torch.load(args.generator_path, weights_only=True))
     generator = generator.to(device)
     
     with torch.no_grad():
-        imgIdx = 11
+        imgIdx = 9
         
-        groundTruthL, groundTruthAB, groundTruthLAB = datasetTrain[imgIdx]
+        groundTruthL, groundTruthAB, groundTruthLAB = datasetTest[imgIdx]
 
         groundTruthL   = groundTruthL.to(torch.float32).unsqueeze(0)
         groundTruthLAB = groundTruthLAB.to(torch.float32)

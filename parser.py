@@ -15,6 +15,9 @@ def makeParser():
                         help="What device to use during training and inference. Default is GPU.")
     
     parser.add_argument('-g', '--generator-path', type=str, required=False, default="Generator.pth",
-                        help="Path to the saved generator")
+                        help="Where to save the trained generator.")
+    
+    parser.add_argument('-b', '--batch_size', type=int, required=True,
+                        help="What batch size to use while training.")
 
     return parser
