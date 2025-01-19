@@ -98,20 +98,24 @@ class ColorizationCNN(nn.Module):
         layer4 = self.batchNorm512(layer4)
         layer4 = self.relu(layer4)
 
+
         # Layer 5: [16,16,512] -> [8,8,512]
         layer5 = self.conv5(layer4)
         layer5 = self.batchNorm512(layer5)
         layer5 = self.relu(layer5)
+
 
         # Layer 6: [8,8,512] -> [4,4,512]
         layer6 = self.conv6(layer5)
         layer6 = self.batchNorm512(layer6)
         layer6 = self.relu(layer6)
 
+
         # Layer 7: [4,4,512] -> [2,2,512]
         layer7 = self.conv7(layer6)
         layer7 = self.batchNorm512(layer7)
         layer7 = self.relu(layer7)
+
 
         # Layer 8: [2,2,512] -> [4,4,512]
         layer8 = self.conv8(layer7)
@@ -135,6 +139,7 @@ class ColorizationCNN(nn.Module):
         layer10 = self.conv10(layer10)
         layer10 = self.upconv3(layer10)
         layer10 = self.batchNorm512(layer10)
+
         layer10 = self.relu(layer10)
 
 

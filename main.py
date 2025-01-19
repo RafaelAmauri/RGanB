@@ -29,6 +29,7 @@ for split in ["train", "test"]:
         imgColorPath = os.path.join(rootFolder, f"{split}_color", imgName)
         videoPaths[split].append([imgBWPath, imgColorPath])
 
+
 videoPaths["train"] = videoPaths['train'][ : 2000]
 
 
@@ -153,6 +154,7 @@ elif args.mode == "test":
 
         groundTruthL   = groundTruthL.to(torch.float32).unsqueeze(0)
         groundTruthLAB = groundTruthLAB.to(torch.float32)
+
 
         generatedAB  = generator(groundTruthL)
         generatedLAB = torch.cat((groundTruthL, generatedAB), dim=1)
