@@ -11,7 +11,10 @@ def makeParser():
     parser.add_argument('-m', '--mode', type=str, choices=["train", "test"],
                         help="What mode to run the code in")
 
-    parser.add_argument('--device', type=str, required=False, choices=["cpu", "cuda"], default="cuda",
+    parser.add_argument('-d', '--device', type=str, required=False, choices=["cpu", "cuda"], default="cuda",
                         help="What device to use during training and inference. Default is GPU.")
+    
+    parser.add_argument('-g', '--generator-path', type=str, required=False, default="Generator.pth",
+                        help="Path to the saved generator")
 
     return parser

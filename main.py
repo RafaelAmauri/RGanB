@@ -3,18 +3,19 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
+
 from tqdm import tqdm
+from skimage import io
+from parser import makeParser
+from collections import defaultdict
 from torch.utils.data import DataLoader
 from torch.amp import autocast, GradScaler
 
 
-from collections import defaultdict
-from generator import ColorizationCNN, ColorizationCNN2
-from discriminator import Discriminator
+from generator import ColorizationCNN
 from dataset import ColorizationDataset
-from parser import makeParser
-
-import numpy as np
+from utils import transform, undoTransform
+from discriminator import NLayerDiscriminator
 
 
 args = makeParser().parse_args()
@@ -28,103 +29,114 @@ for split in ["train", "test"]:
         imgColorPath = os.path.join(rootFolder, f"{split}_color", imgName)
         videoPaths[split].append([imgBWPath, imgColorPath])
 
-videoPaths["train"] = videoPaths['train'][ : 500]
+
+videoPaths["train"] = videoPaths['train'][ : 2000]
 
 
 datasetTrain    = ColorizationDataset(videoPaths["train"])
-dataloaderTrain = DataLoader(datasetTrain, batch_size=32, shuffle=True, num_workers=16, pin_memory=True)
+dataloaderTrain = DataLoader(datasetTrain, batch_size=2, shuffle=True, num_workers=8, pin_memory=True)
 datasetTest     = ColorizationDataset(videoPaths["test"])
-dataloaderTest  = DataLoader(datasetTest, batch_size=32, shuffle=True, num_workers=16, pin_memory=True)
+dataloaderTest  = DataLoader(datasetTest,  batch_size=2, shuffle=True, num_workers=8, pin_memory=True)
 
 device = args.device
 
 # Instantiate model
 generator     = ColorizationCNN().to(device)
-discriminator = Discriminator().to(device)
+discriminator = NLayerDiscriminator(3).to(device)
 
 if args.mode == "train":
 
     # Loss functions
-    adversarial_criterion = nn.BCEWithLogitsLoss()  # For discriminator
-    content_criterion = nn.L1Loss()      # For generator (L2 loss)
+    adversarialCriterion = nn.BCEWithLogitsLoss()   # For discriminator
+    l1Loss  = nn.L1Loss()
 
     # Optimizers
-    lr_D=0.001
-    lr_G=0.001
-    alpha = 0.001
-    optimizer_D = optim.Adam(discriminator.parameters(), lr=lr_D)
-    optimizer_G = optim.Adam(generator.parameters(), lr=lr_G)
+    lr_D=0.0001
+    lr_G=0.0002
+    
+    optimizerD = optim.Adam(discriminator.parameters(), lr=lr_D, betas=(0.5, 0.999))
+    optimizerG = optim.Adam(generator.parameters(),     lr=lr_G, betas=(0.5, 0.999))
+    
+    scalerG = GradScaler()
+    scalerD = GradScaler()
+    
+    numEpochs = 300
+    nBatches  = max(1, len(datasetTrain) // dataloaderTrain.batch_size)
 
-    schedulerG   = optim.lr_scheduler.MultiStepLR(optimizer_G, milestones=[130,200,250], gamma=0.1)
-    schedulerD   = optim.lr_scheduler.MultiStepLR(optimizer_D, milestones=[30,200,250], gamma=0.1)
-
-    scaler_G = GradScaler()
-    scaler_D = GradScaler()
-
-    numEpochs = 200
     for currentEpoch in tqdm(range(numEpochs), desc="Training Completed", unit="epoch"):
         runningLossGenerator     = 0
         runningLossDiscriminator = 0
-        runningLossAdversarial   = 0
-        for i, (sampleBW, sampleRGB) in enumerate(tqdm(dataloaderTrain, desc=f"Epoch {currentEpoch+1}", leave=False, unit="batch")):
-            sampleBW  = sampleBW.to(device)
-            sampleRGB = sampleRGB.to(device)
+        for (groundTruthL, groundTruthAB, groundTruthLAB) in tqdm(dataloaderTrain, desc=f"Epoch {currentEpoch}", leave=False, unit="batch"):
+            groundTruthL    = groundTruthL.to(torch.float32).to(device)
+            groundTruthLAB  = groundTruthLAB.to(torch.float32).to(device)
+            groundTruthAB   = groundTruthAB.to(torch.float32).to(device)
 
+            # The generator only generates the A and B channels. The L channel is later added to the tensor to form the LAB image.
+            # The idea is to avoid the generator messing with the L channel in the convolutions. Since the generator doesn't mess with the L channel, 
+            # it will focus its effort only on adjusting the weights for the A and B channels.
             with autocast(device_type=device, dtype=torch.float16):
-                generatedRGB  = generator(sampleBW)
-                
+                generatedAB  = generator(groundTruthL)
+            
+            generatedLAB = torch.cat((groundTruthL, generatedAB), dim=1)
+
+            # Ligando o cálculo de gradiente para o discriminador
+            for p in discriminator.parameters():
+                p.requires_grad = True
+
 
             # Train Discriminator
-            optimizer_D.zero_grad()
+            optimizerD.zero_grad()
             with autocast(device_type=device, dtype=torch.float16):
-                real_images = sampleRGB
-                fake_images = generatedRGB.detach()
+                # Discriminator learns to differentiate the entire groundtruth LAB image from the fake LAB image.
+                # It receives all 3 channels, not just the A and B channels.
+                predictionFakeImages = discriminator(generatedLAB.detach())
+                arrayZeros           = torch.zeros_like(predictionFakeImages)
+                fakeImagesLoss       = adversarialCriterion(predictionFakeImages, arrayZeros)
 
-                predictionRealImages = discriminator(real_images)
-                predictionFakeImages = discriminator(fake_images)
+                predictionRealImages = discriminator(groundTruthLAB)
+                arrayOnes            = torch.ones_like(predictionRealImages).uniform_(0.85, 0.95)
+                realImagesLoss       = adversarialCriterion(predictionRealImages, arrayOnes)
 
-                real_labels = torch.empty_like(predictionRealImages).uniform_(0.95, 0.99)
-                fake_labels = torch.zeros_like(predictionFakeImages)
+                discriminatorLoss = (realImagesLoss + fakeImagesLoss) / 2
+                runningLossDiscriminator += discriminatorLoss.item()
 
-                real_loss = adversarial_criterion(predictionRealImages, real_labels)
-                fake_loss = adversarial_criterion(predictionFakeImages, fake_labels)
-                discriminator_loss = (real_loss + fake_loss) / 2
-                
-                runningLossDiscriminator += discriminator_loss.item()
 
-            # Scale loss and backpropagate for discriminator
-            scaler_D.scale(discriminator_loss).backward()
-            scaler_D.step(optimizer_D)
-            scaler_D.update()
-
+            scalerD.scale(discriminatorLoss).backward()
+            scalerD.step(optimizerD)
+            scalerD.update()
+            
 
             # Train Generator
-            optimizer_G.zero_grad()
+            for p in discriminator.parameters():
+                p.requires_grad = False
+        
+            # Zeramos os gradientes do gerador
+            optimizerG.zero_grad()
+            
             with autocast(device_type=device, dtype=torch.float16):
-                # Content loss
-                mse_loss = content_criterion(generatedRGB, sampleRGB)
+                # L1 Loss is calculated for the A and B channels ONLY.
+                l1_loss  = l1Loss(generatedAB, groundTruthAB)
                 
-                # Adversarial loss
-                adversarial_loss = adversarial_criterion(discriminator(fake_images), real_labels)
-                if currentEpoch > 70:
-                    alpha = 0.01
-                    
-                generator_loss   = mse_loss + alpha * adversarial_loss
+                # Adversarial loss is calculated for the LAB image.
+                if currentEpoch < 30:
+                    generatorLoss = 100 * l1_loss
+                else:
+                    adversarialLoss = adversarialCriterion(discriminator(generatedLAB), torch.ones_like(predictionRealImages))
+                    generatorLoss   = adversarialLoss + 100 * l1_loss
 
-                runningLossGenerator     += generator_loss.item()
-                runningLossAdversarial   += adversarial_loss.item()
-
+                runningLossGenerator     += generatorLoss.item()
+                
             # Scale loss and backpropagate for generator
-            scaler_G.scale(generator_loss).backward()
-            scaler_G.step(optimizer_G)
-            scaler_G.update()
+            scalerG.scale(generatorLoss).backward()
+            scalerG.step(optimizerG)
+            scalerG.update()
 
 
+        runningLossGenerator     = runningLossGenerator     / nBatches
+        runningLossDiscriminator = runningLossDiscriminator / nBatches
 
+        print(f"\nEpoch {currentEpoch} finished. Generator Loss (mean/batch): {runningLossGenerator}, Discriminator Loss (mean/batch): {runningLossDiscriminator}")
 
-        schedulerG.step()
-        schedulerD.step()
-        print(f"\nEpoch {currentEpoch} finished. LR: {schedulerG.get_last_lr()} Generator Loss: {runningLossGenerator}, Discriminator Loss: {runningLossDiscriminator}, Adversarial Loss: {runningLossAdversarial}")
 
     torch.save(generator.state_dict(), "Generator.pth")
     print("Trained model saved to Generator.pth")
@@ -136,30 +148,25 @@ elif args.mode == "test":
     generator = generator.to(device)
     
     with torch.no_grad():
-
-        imgIdx = 1
+        imgIdx = 11
         
-        groundTruthBW, groundTruthRGB = datasetTrain[imgIdx]
-        # Add batch channel
-        groundTruthBW = groundTruthBW.unsqueeze(0)
+        groundTruthL, groundTruthAB, groundTruthLAB = datasetTrain[imgIdx]
 
-        generatedRGB  = generator(groundTruthBW)
+        groundTruthL   = groundTruthL.to(torch.float32).unsqueeze(0)
+        groundTruthLAB = groundTruthLAB.to(torch.float32)
+
+
+        generatedAB  = generator(groundTruthL)
+        generatedLAB = torch.cat((groundTruthL, generatedAB), dim=1)
         
         # Remove batch channel
-        generatedRGB  = generatedRGB.squeeze(0)
+        generatedLAB  = generatedLAB.squeeze(0)
         # Remove batch channel
-        groundTruthBW = groundTruthBW.squeeze(0)
+        groundTruthL = groundTruthL.squeeze(0).squeeze(0)
 
-
-        groundTruthRGB = (groundTruthRGB * 255).to(torch.uint8)
-        generatedRGB   = (generatedRGB * 255).to(torch.uint8)
-        groundTruthBW  = (groundTruthBW * 255).to(torch.uint8)
+        generatedRGB, _    = undoTransform(generatedLAB)
+        groundTruthRGB, groundTruthGray  = undoTransform(groundTruthLAB)
         
-        content_criterion = nn.MSELoss()
-        mse_loss = content_criterion(generatedRGB.to(torch.float), groundTruthRGB.to(torch.float))
-
-        import torchvision 
-        torchvision.io.write_jpeg(generatedRGB, "./colorized.jpeg")
-        torchvision.io.write_jpeg(groundTruthRGB, "./groundtruth.jpeg")
-        torchvision.io.write_jpeg(groundTruthBW, "./black_and_white.jpeg")
-        
+        io.imsave("./colorized.jpeg", generatedRGB)
+        io.imsave("./groundtruth.jpeg", groundTruthRGB)
+        io.imsave("./grayscale.jpeg", groundTruthGray)
