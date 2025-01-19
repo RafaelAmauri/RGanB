@@ -178,7 +178,6 @@ class ColorizationCNN(nn.Module):
         # Add residuals from Layer 1_1
         layer15 = torch.cat((layer14, layer1_1), dim=1)
         layer15 = self.conv15(layer15)
-        #layer15 = self.groupNorm2(layer15)
         layer15 = self.sigmoid(layer15)
 
         return layer15

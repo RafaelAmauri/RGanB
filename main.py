@@ -5,21 +5,17 @@ import torch.optim as optim
 
 
 from tqdm import tqdm
-from torch.utils.data import DataLoader
-
-
-from collections import defaultdict
-from generator import ColorizationCNN
-from discriminator import Discriminator, NLayerDiscriminator
-from dataset import ColorizationDataset
-from parser import makeParser
-from utils import transform, undoTransform
-
-from torch.amp import autocast, GradScaler
 from skimage import io
+from parser import makeParser
+from collections import defaultdict
+from torch.utils.data import DataLoader
+from torch.amp import autocast, GradScaler
 
-from torchvision.models import vgg19
-import torch.nn.functional as F
+
+from generator import ColorizationCNN
+from dataset import ColorizationDataset
+from utils import transform, undoTransform
+from discriminator import NLayerDiscriminator
 
 
 args = makeParser().parse_args()
@@ -33,13 +29,13 @@ for split in ["train", "test"]:
         imgColorPath = os.path.join(rootFolder, f"{split}_color", imgName)
         videoPaths[split].append([imgBWPath, imgColorPath])
 
-videoPaths["train"] = videoPaths['train'][ : 20]
+videoPaths["train"] = videoPaths['train'][ : 2000]
 
 
 datasetTrain    = ColorizationDataset(videoPaths["train"])
-dataloaderTrain = DataLoader(datasetTrain, batch_size=1, shuffle=True, num_workers=16, pin_memory=True)
+dataloaderTrain = DataLoader(datasetTrain, batch_size=2, shuffle=True, num_workers=8, pin_memory=True)
 datasetTest     = ColorizationDataset(videoPaths["test"])
-dataloaderTest  = DataLoader(datasetTest,  batch_size=1, shuffle=True, num_workers=16, pin_memory=True)
+dataloaderTest  = DataLoader(datasetTest,  batch_size=2, shuffle=True, num_workers=8, pin_memory=True)
 
 device = args.device
 
@@ -55,7 +51,7 @@ if args.mode == "train":
 
     # Optimizers
     lr_D=0.0001
-    lr_G=0.001
+    lr_G=0.0002
     
     optimizerD = optim.Adam(discriminator.parameters(), lr=lr_D, betas=(0.5, 0.999))
     optimizerG = optim.Adam(generator.parameters(),     lr=lr_G, betas=(0.5, 0.999))
@@ -63,12 +59,6 @@ if args.mode == "train":
     scalerG = GradScaler()
     scalerD = GradScaler()
     
-    # This pretrained VGG model is used for perceptual loss. It identifies if the features of the
-    # generated image are consistent with the features of the groundtruth image.
-    vgg = vgg19(weights="VGG19_Weights.DEFAULT").features.to(device)
-    for param in vgg.parameters():
-        param.requires_grad = False
-
     numEpochs = 300
     nBatches  = max(1, len(datasetTrain) // dataloaderTrain.batch_size)
 
@@ -80,13 +70,12 @@ if args.mode == "train":
             groundTruthLAB  = groundTruthLAB.to(torch.float32).to(device)
             groundTruthAB   = groundTruthAB.to(torch.float32).to(device)
 
-
             # The generator only generates the A and B channels. The L channel is later added to the tensor to form the LAB image.
             # The idea is to avoid the generator messing with the L channel in the convolutions. Since the generator doesn't mess with the L channel, 
             # it will focus its effort only on adjusting the weights for the A and B channels.
             with autocast(device_type=device, dtype=torch.float16):
                 generatedAB  = generator(groundTruthL)
-
+            
             generatedLAB = torch.cat((groundTruthL, generatedAB), dim=1)
 
             # Ligando o cálculo de gradiente para o discriminador
@@ -128,18 +117,11 @@ if args.mode == "train":
                 l1_loss  = l1Loss(generatedAB, groundTruthAB)
                 
                 # Adversarial loss is calculated for the LAB image.
-                if currentEpoch < 100:
+                if currentEpoch < 30:
                     generatorLoss = 100 * l1_loss
                 else:
                     adversarialLoss = adversarialCriterion(discriminator(generatedLAB), torch.ones_like(predictionRealImages))
-                    generatedRGB,   _ = undoTransform(generatedLAB.detach().cpu().squeeze(0))
-                    groundTruthRGB, _ = undoTransform(groundTruthLAB.cpu().squeeze(0))
-
-                    generatedRGB   = torch.from_numpy(generatedRGB).permute((2, 0, 1)).to(torch.float32).to(device)
-                    groundTruthRGB = torch.from_numpy(groundTruthRGB).permute((2, 0, 1)).to(torch.float32).to(device)
-                    perceptualLoss  = l1Loss(vgg(generatedRGB), vgg(groundTruthLAB))
-
-                    generatorLoss   = adversarialLoss + 80 * l1_loss + perceptualLoss
+                    generatorLoss   = adversarialLoss + 100 * l1_loss
 
                 runningLossGenerator     += generatorLoss.item()
                 
@@ -161,13 +143,13 @@ if args.mode == "train":
 
 
 elif args.mode == "test":
-    generator.load_state_dict(torch.load(args.generator_path, weights_only=True))
+    generator.load_state_dict(torch.load("Generator.pth", weights_only=True))
     generator = generator.to(device)
     
     with torch.no_grad():
-        imgIdx = 21
+        imgIdx = 11
         
-        groundTruthL, groundTruthAB, groundTruthLAB = datasetTest[imgIdx]
+        groundTruthL, groundTruthAB, groundTruthLAB = datasetTrain[imgIdx]
 
         groundTruthL   = groundTruthL.to(torch.float32).unsqueeze(0)
         groundTruthLAB = groundTruthLAB.to(torch.float32)
