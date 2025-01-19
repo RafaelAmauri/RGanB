@@ -161,13 +161,13 @@ if args.mode == "train":
 
 
 elif args.mode == "test":
-    generator.load_state_dict(torch.load("Generator.pth", weights_only=True))
+    generator.load_state_dict(torch.load(args.generator_path, weights_only=True))
     generator = generator.to(device)
     
     with torch.no_grad():
-        imgIdx = 11
+        imgIdx = 21
         
-        groundTruthL, groundTruthAB, groundTruthLAB = datasetTrain[imgIdx]
+        groundTruthL, groundTruthAB, groundTruthLAB = datasetTest[imgIdx]
 
         groundTruthL   = groundTruthL.to(torch.float32).unsqueeze(0)
         groundTruthLAB = groundTruthLAB.to(torch.float32)
