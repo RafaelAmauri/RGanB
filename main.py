@@ -13,6 +13,7 @@ from torch.amp import autocast, GradScaler
 
 
 from utils import undoTransform
+from torch.optim import lr_scheduler
 from generator import ColorizationCNN
 from dataset import ColorizationDataset
 from discriminator import NLayerDiscriminator
@@ -30,7 +31,7 @@ for split in ["train", "test"]:
         videoPaths[split].append([imgBWPath, imgColorPath])
 
 
-#videoPaths["train"] = videoPaths['train'][ : 2000]
+#videoPaths["train"] = videoPaths['train'][ : 1]
 
 
 datasetTrain    = ColorizationDataset(videoPaths["train"])
@@ -59,6 +60,13 @@ if args.mode == "train":
     
     scalerG = GradScaler()
     scalerD = GradScaler()
+
+    def lambdaRule(epoch):
+        lr_l = 1.0 - max(0, epoch + 1 - 200) / float(200 + 1)
+        return lr_l
+
+    schedulerG = lr_scheduler.LambdaLR(optimizerG, lr_lambda=lambdaRule)
+    schedulerD = lr_scheduler.LambdaLR(optimizerD, lr_lambda=lambdaRule)
     
     numEpochs = 200
     nBatches  = max(1, len(datasetTrain) // dataloaderTrain.batch_size)
@@ -115,7 +123,7 @@ if args.mode == "train":
                 l1_loss  = l1Loss(generatedAB, groundTruthAB)
                 
                 # 30 Epochs to teach the model the general structure of the image.
-                if currentEpoch < 30:
+                if currentEpoch < 20:
                     generatorLoss = 100 * l1_loss
                 else:
                     # Adversarial loss is calculated for the LAB image.
@@ -130,6 +138,9 @@ if args.mode == "train":
             scalerG.update()
 
 
+        schedulerG.step()
+        schedulerD.step()
+        
         runningLossGenerator     = runningLossGenerator     / nBatches
         runningLossDiscriminator = runningLossDiscriminator / nBatches
 
@@ -147,9 +158,9 @@ elif args.mode == "test":
     generator = generator.to(device)
     
     with torch.no_grad():
-        imgIdx = 9
+        imgIdx = 1
         
-        groundTruthL, groundTruthAB, groundTruthLAB = datasetTest[imgIdx]
+        groundTruthL, groundTruthAB, groundTruthLAB = datasetTrain[imgIdx]
 
         groundTruthL   = groundTruthL.to(torch.float32).unsqueeze(0)
         groundTruthLAB = groundTruthLAB.to(torch.float32)
