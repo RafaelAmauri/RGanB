@@ -22,21 +22,19 @@ from discriminator import NLayerDiscriminator
 args = makeParser().parse_args()
 
 rootFolder = "/home/rafael/Estudos/Datasets/image-colorization-dataset/data"
-videoPaths = defaultdict(list)
+imagePaths = defaultdict(list)
 
 for split in ["train", "test"]:
     for imgName in os.listdir(os.path.join(rootFolder, f"{split}_black")):
         imgBWPath    = os.path.join(rootFolder, f"{split}_black", imgName)
         imgColorPath = os.path.join(rootFolder, f"{split}_color", imgName)
-        videoPaths[split].append([imgBWPath, imgColorPath])
+        imagePaths[split].append([imgBWPath, imgColorPath])
 
 
-#videoPaths["train"] = videoPaths['train'][ : 1]
 
-
-datasetTrain    = ColorizationDataset(videoPaths["train"])
+datasetTrain    = ColorizationDataset(imagePaths["train"])
 dataloaderTrain = DataLoader(datasetTrain, batch_size=args.batch_size, shuffle=True, num_workers=os.cpu_count()-3, pin_memory=True)
-datasetTest     = ColorizationDataset(videoPaths["test"])
+datasetTest     = ColorizationDataset(imagePaths["test"])
 dataloaderTest  = DataLoader(datasetTest,  batch_size=1, shuffle=True, num_workers=os.cpu_count()-3, pin_memory=True)
 
 device = args.device

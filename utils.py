@@ -4,6 +4,14 @@ import skimage
 
 
 def undoTransform(imgColorLAB):
+    """The reverse of transform(). Un-normalizes the normalized LAB image, and converts it to RGB.
+
+    Args:
+        imgColorLAB: The LAB image
+
+    Returns:
+        Array, Array: The RGB image and a grayscale version of the same image.
+    """
     imgColorL, imgColorA, imgColorB = imgColorLAB
 
     imgColorL = imgColorL * 100
@@ -23,6 +31,14 @@ def undoTransform(imgColorLAB):
 
 
 def transform(imgColor):
+    """Converts the RGB image into the LAB colorspace and normalizes it in the [0, 1] range.
+
+    Args:
+        imgColor: The RGB image
+
+    Returns:
+        Array, Array, Array: The normalized L channel, the normalized AB channels and the normalized LAB image
+    """
 
     imgColor = skimage.transform.resize(imgColor, (256,256))
 
